@@ -611,7 +611,6 @@ async def generate_speech(
         model_size = data.model_size or "1.7B"
 
         # Check if model needs to be downloaded first
-        model_path = tts_model._get_model_path(model_size)
         if not tts_model._is_model_cached(model_size):
             # Model is not fully cached — kick off a background download and tell
             # the client to retry once it's ready.
@@ -638,18 +637,79 @@ async def generate_speech(
         # Load (or switch to) the requested model before building the voice prompt
         await tts_model.load_model_async(model_size)
 
-        # Create voice prompt from profile (model is already loaded with correct size)
-        voice_prompt = await profiles.create_voice_prompt_for_profile(
+        # Create primary voice prompt from selected profile
+        primary_voice_prompt = await profiles.create_voice_prompt_for_profile(
             data.profile_id,
             db,
         )
 
-        audio, sample_rate = await tts_model.generate(
-            data.text,
-            voice_prompt,
-            data.language,
-            data.seed,
-            data.instruct,
+        secondary_profile_id = data.secondary_profile_id
+        secondary_weight = float(data.secondary_weight if data.secondary_weight is not None else 0.5)
+        use_secondary_profile = bool(
+            secondary_profile_id and secondary_profile_id != data.profile_id
+        )
+
+        if use_secondary_profile:
+            secondary_profile = await profiles.get_profile(secondary_profile_id, db)
+            if not secondary_profile:
+                raise HTTPException(status_code=404, detail="Secondary profile not found")
+
+        if use_secondary_profile and secondary_weight >= 0.999:
+            secondary_voice_prompt = await profiles.create_voice_prompt_for_profile(
+                secondary_profile_id,
+                db,
+            )
+            audio, sample_rate = await tts_model.generate(
+                data.text,
+                secondary_voice_prompt,
+                data.language,
+                data.seed,
+                data.instruct,
+            )
+        elif use_secondary_profile and secondary_weight > 0.001:
+            secondary_voice_prompt = await profiles.create_voice_prompt_for_profile(
+                secondary_profile_id,
+                db,
+            )
+            primary_audio, sample_rate = await tts_model.generate(
+                data.text,
+                primary_voice_prompt,
+                data.language,
+                data.seed,
+                data.instruct,
+            )
+            secondary_audio, secondary_sample_rate = await tts_model.generate(
+                data.text,
+                secondary_voice_prompt,
+                data.language,
+                data.seed,
+                data.instruct,
+            )
+
+            if secondary_sample_rate != sample_rate:
+                raise ValueError("Primary and secondary generation sample rates must match")
+
+            from .utils.audio import blend_audio_tracks
+            audio = blend_audio_tracks(
+                primary_audio,
+                secondary_audio,
+                secondary_weight=secondary_weight,
+            )
+        else:
+            audio, sample_rate = await tts_model.generate(
+                data.text,
+                primary_voice_prompt,
+                data.language,
+                data.seed,
+                data.instruct,
+            )
+
+        from .utils.audio import apply_voice_effects
+        audio = apply_voice_effects(
+            audio,
+            sample_rate,
+            pitch_shift_semitones=float(data.pitch_shift or 0.0),
+            formant_shift=float(data.formant_shift or 1.0),
         )
 
         # Calculate duration
@@ -714,14 +774,75 @@ async def stream_speech(
     # Load the correct model before building the voice prompt (fixes issue #96)
     await tts_model.load_model_async(model_size)
 
-    voice_prompt = await profiles.create_voice_prompt_for_profile(data.profile_id, db)
+    primary_voice_prompt = await profiles.create_voice_prompt_for_profile(data.profile_id, db)
 
-    audio, sample_rate = await tts_model.generate(
-        data.text,
-        voice_prompt,
-        data.language,
-        data.seed,
-        data.instruct,
+    secondary_profile_id = data.secondary_profile_id
+    secondary_weight = float(data.secondary_weight if data.secondary_weight is not None else 0.5)
+    use_secondary_profile = bool(
+        secondary_profile_id and secondary_profile_id != data.profile_id
+    )
+
+    if use_secondary_profile:
+        secondary_profile = await profiles.get_profile(secondary_profile_id, db)
+        if not secondary_profile:
+            raise HTTPException(status_code=404, detail="Secondary profile not found")
+
+    if use_secondary_profile and secondary_weight >= 0.999:
+        secondary_voice_prompt = await profiles.create_voice_prompt_for_profile(
+            secondary_profile_id,
+            db,
+        )
+        audio, sample_rate = await tts_model.generate(
+            data.text,
+            secondary_voice_prompt,
+            data.language,
+            data.seed,
+            data.instruct,
+        )
+    elif use_secondary_profile and secondary_weight > 0.001:
+        secondary_voice_prompt = await profiles.create_voice_prompt_for_profile(
+            secondary_profile_id,
+            db,
+        )
+        primary_audio, sample_rate = await tts_model.generate(
+            data.text,
+            primary_voice_prompt,
+            data.language,
+            data.seed,
+            data.instruct,
+        )
+        secondary_audio, secondary_sample_rate = await tts_model.generate(
+            data.text,
+            secondary_voice_prompt,
+            data.language,
+            data.seed,
+            data.instruct,
+        )
+
+        if secondary_sample_rate != sample_rate:
+            raise ValueError("Primary and secondary generation sample rates must match")
+
+        from .utils.audio import blend_audio_tracks
+        audio = blend_audio_tracks(
+            primary_audio,
+            secondary_audio,
+            secondary_weight=secondary_weight,
+        )
+    else:
+        audio, sample_rate = await tts_model.generate(
+            data.text,
+            primary_voice_prompt,
+            data.language,
+            data.seed,
+            data.instruct,
+        )
+
+    from .utils.audio import apply_voice_effects
+    audio = apply_voice_effects(
+        audio,
+        sample_rate,
+        pitch_shift_semitones=float(data.pitch_shift or 0.0),
+        formant_shift=float(data.formant_shift or 1.0),
     )
 
     wav_bytes = tts.audio_to_wav_bytes(audio, sample_rate)

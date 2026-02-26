@@ -73,7 +73,7 @@ export function MultiSelect({
         <button
           type="button"
           className={cn(
-            'flex h-8 w-full items-center justify-between rounded-full border border-border bg-card px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-background/50 transition-all',
+            'neu-inset flex h-8 w-full items-center justify-between rounded-full px-3 py-2 text-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all',
             className,
           )}
         >

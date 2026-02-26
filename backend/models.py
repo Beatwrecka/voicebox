@@ -57,6 +57,10 @@ class GenerationRequest(BaseModel):
     seed: Optional[int] = Field(None, ge=0)
     model_size: Optional[str] = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B)$")
     instruct: Optional[str] = Field(None, max_length=500)
+    secondary_profile_id: Optional[str] = Field(None)
+    secondary_weight: Optional[float] = Field(0.5, ge=0.0, le=1.0)
+    pitch_shift: Optional[float] = Field(0.0, ge=-12.0, le=12.0)
+    formant_shift: Optional[float] = Field(1.0, ge=0.7, le=1.4)
 
 
 class GenerationResponse(BaseModel):

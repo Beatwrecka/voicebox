@@ -18,15 +18,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { LANGUAGE_OPTIONS } from '@/lib/constants/languages';
 import { useGenerationForm } from '@/lib/hooks/useGenerationForm';
-import { useProfile } from '@/lib/hooks/useProfiles';
+import { useProfile, useProfiles } from '@/lib/hooks/useProfiles';
 import { useUIStore } from '@/stores/uiStore';
 
 export function GenerationForm() {
   const selectedProfileId = useUIStore((state) => state.selectedProfileId);
   const { data: selectedProfile } = useProfile(selectedProfileId || '');
+  const { data: profiles = [] } = useProfiles();
+  const secondaryProfiles = profiles.filter((profile) => profile.id !== selectedProfileId);
 
   const { form, handleSubmit, isPending } = useGenerationForm();
 
@@ -168,6 +171,124 @@ export function GenerationForm() {
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="space-y-4 rounded-xl p-4 border bg-muted/30">
+              <FormField
+                control={form.control}
+                name="secondaryProfileId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Blend Voice (optional)</FormLabel>
+                    <Select
+                      onValueChange={(value) =>
+                        field.onChange(value === '__none__' ? undefined : value)
+                      }
+                      value={field.value || '__none__'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="No blend voice" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__none__">No blend voice</SelectItem>
+                        {secondaryProfiles.map((profile) => (
+                          <SelectItem key={profile.id} value={profile.id}>
+                            {profile.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Blend output from two profiles using weighted mixing.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="secondaryWeight"
+                render={({ field }) => {
+                  const primaryWeight = 1 - field.value;
+                  return (
+                    <FormItem>
+                      <FormLabel>
+                        Blend Weight
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          Primary {Math.round(primaryWeight * 100)}% / Secondary{' '}
+                          {Math.round(field.value * 100)}%
+                        </span>
+                      </FormLabel>
+                      <FormControl>
+                        <Slider
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={[field.value]}
+                          onValueChange={(value) => field.onChange(value[0] ?? 0.5)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
+              />
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="pitchShift"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Pitch Shift
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {field.value > 0 ? '+' : ''}
+                          {field.value.toFixed(1)} st
+                        </span>
+                      </FormLabel>
+                      <FormControl>
+                        <Slider
+                          min={-12}
+                          max={12}
+                          step={0.5}
+                          value={[field.value]}
+                          onValueChange={(value) => field.onChange(value[0] ?? 0)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="formantShift"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Formant Shift
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {field.value.toFixed(2)}x
+                        </span>
+                      </FormLabel>
+                      <FormControl>
+                        <Slider
+                          min={0.7}
+                          max={1.4}
+                          step={0.01}
+                          value={[field.value]}
+                          onValueChange={(value) => field.onChange(value[0] ?? 1)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             <Button

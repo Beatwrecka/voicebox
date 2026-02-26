@@ -34,6 +34,11 @@ export interface GenerationRequest {
   language: LanguageCode;
   seed?: number;
   model_size?: '1.7B' | '0.6B';
+  instruct?: string;
+  secondary_profile_id?: string;
+  secondary_weight?: number;
+  pitch_shift?: number;
+  formant_shift?: number;
 }
 
 export interface GenerationResponse {

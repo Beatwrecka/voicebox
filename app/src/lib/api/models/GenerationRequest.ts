@@ -12,4 +12,8 @@ export type GenerationRequest = {
   seed?: number | null;
   model_size?: string | null;
   instruct?: string | null;
+  secondary_profile_id?: string | null;
+  secondary_weight?: number | null;
+  pitch_shift?: number | null;
+  formant_shift?: number | null;
 };

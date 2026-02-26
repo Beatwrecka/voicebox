@@ -76,16 +76,12 @@ export function MainEditor() {
   };
 
   return (
-    // Main view: Profiles top left, Generator bottom left, History right
+    // Main view: Profiles left, docked generator under actions, History right
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-0 overflow-hidden relative">
       {/* Left Column */}
       <div className="flex flex-col min-h-0 overflow-hidden relative">
-        {/* Scroll Mask - Always visible, behind content */}
-        <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-background to-transparent z-0 pointer-events-none" />
-
-        {/* Fixed Header */}
-        <div className="absolute top-0 left-0 right-0 z-10">
-          <div className="flex items-center justify-between mb-4 px-1">
+        <div className="shrink-0 px-1 pb-4 space-y-4">
+          <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold">Voicebox</h2>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleImportClick}>
@@ -105,13 +101,15 @@ export function MainEditor() {
               </Button>
             </div>
           </div>
+
+          <FloatingGenerateBox mode="docked" />
         </div>
 
         {/* Scrollable Content */}
         <div
           ref={scrollRef}
           className={cn(
-            'flex-1 min-h-0 overflow-y-auto pt-14',
+            'flex-1 min-h-0 overflow-y-auto',
             isPlayerVisible ? BOTTOM_SAFE_AREA_PADDING : 'pb-4',
           )}
         >
@@ -127,9 +125,6 @@ export function MainEditor() {
       <div className="flex flex-col min-h-0 overflow-hidden">
         <HistoryTable />
       </div>
-
-      {/* Floating Generate Box */}
-      <FloatingGenerateBox isPlayerOpen={!!audioUrl} />
 
       {/* Import Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>

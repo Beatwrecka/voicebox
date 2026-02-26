@@ -1,6 +1,6 @@
 import { useMatchRoute } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { BookmarkPlus, Loader2, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { LANGUAGE_OPTIONS } from '@/lib/constants/languages';
@@ -18,17 +19,20 @@ import { useGenerationForm } from '@/lib/hooks/useGenerationForm';
 import { useProfile, useProfiles } from '@/lib/hooks/useProfiles';
 import { useAddStoryItem, useStory } from '@/lib/hooks/useStories';
 import { cn } from '@/lib/utils/cn';
+import { useBlendPresetStore } from '@/stores/blendPresetStore';
 import { useStoryStore } from '@/stores/storyStore';
 import { useUIStore } from '@/stores/uiStore';
 
 interface FloatingGenerateBoxProps {
   isPlayerOpen?: boolean;
   showVoiceSelector?: boolean;
+  mode?: 'floating' | 'docked';
 }
 
 export function FloatingGenerateBox({
   isPlayerOpen = false,
   showVoiceSelector = false,
+  mode = 'floating',
 }: FloatingGenerateBoxProps) {
   const selectedProfileId = useUIStore((state) => state.selectedProfileId);
   const setSelectedProfileId = useUIStore((state) => state.setSelectedProfileId);
@@ -45,6 +49,11 @@ export function FloatingGenerateBox({
   const { data: currentStory } = useStory(selectedStoryId);
   const addStoryItem = useAddStoryItem();
   const { toast } = useToast();
+  const presets = useBlendPresetStore((state) => state.presets);
+  const savePreset = useBlendPresetStore((state) => state.savePreset);
+  const deletePreset = useBlendPresetStore((state) => state.deletePreset);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const isDocked = mode === 'docked';
 
   // Calculate if track editor is visible (on stories route with items)
   const hasTrackEditor = isStoriesRoute && currentStory && currentStory.items.length > 0;
@@ -74,6 +83,9 @@ export function FloatingGenerateBox({
       }
     },
   });
+
+  const language = form.watch('language');
+  const modelSize = form.watch('modelSize') ?? '1.7B';
 
   // Click away handler to collapse the box
   useEffect(() => {
@@ -166,28 +178,142 @@ export function FloatingGenerateBox({
     await handleSubmit(data, selectedProfileId);
   }
 
+  useEffect(() => {
+    if (!selectedPresetId) {
+      return;
+    }
+
+    const exists = presets.some((preset) => preset.id === selectedPresetId);
+    if (!exists) {
+      setSelectedPresetId('');
+    }
+  }, [presets, selectedPresetId]);
+
+  function applyPreset(presetId: string) {
+    const preset = presets.find((item) => item.id === presetId);
+    if (!preset) {
+      return;
+    }
+
+    if (preset.primaryProfileId) {
+      setSelectedProfileId(preset.primaryProfileId);
+    }
+
+    form.setValue('secondaryProfileId', preset.secondaryProfileId ?? undefined, { shouldDirty: true });
+    form.setValue('secondaryWeight', preset.secondaryWeight, { shouldDirty: true });
+    form.setValue('pitchShift', preset.pitchShift, { shouldDirty: true });
+    form.setValue('formantShift', preset.formantShift, { shouldDirty: true });
+    form.setValue('language', preset.language, { shouldDirty: true });
+    form.setValue('modelSize', preset.modelSize, { shouldDirty: true });
+
+    setSelectedPresetId(preset.id);
+    setIsExpanded(true);
+    toast({
+      title: 'Voice recipe loaded',
+      description: `Applied "${preset.name}"`,
+    });
+  }
+
+  function onPresetSelect(value: string) {
+    if (value === '__none__') {
+      setSelectedPresetId('');
+      return;
+    }
+    applyPreset(value);
+  }
+
+  function handleSavePreset() {
+    if (!selectedProfileId) {
+      toast({
+        title: 'No voice selected',
+        description: 'Select a base voice before saving a blend recipe.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const values = form.getValues();
+    const primaryVoice = profiles?.find((profile) => profile.id === selectedProfileId)?.name ?? 'Voice';
+    const secondaryVoice = values.secondaryProfileId
+      ? profiles?.find((profile) => profile.id === values.secondaryProfileId)?.name
+      : null;
+    const suggestedName = secondaryVoice ? `${primaryVoice} + ${secondaryVoice}` : `${primaryVoice} FX`;
+    const name = window.prompt('Save voice recipe as:', suggestedName)?.trim();
+
+    if (!name) {
+      return;
+    }
+
+    const preset = savePreset({
+      name,
+      primaryProfileId: selectedProfileId,
+      secondaryProfileId: values.secondaryProfileId ?? null,
+      secondaryWeight: values.secondaryWeight,
+      pitchShift: values.pitchShift,
+      formantShift: values.formantShift,
+      language,
+      modelSize,
+    });
+
+    setSelectedPresetId(preset.id);
+    toast({
+      title: 'Voice recipe saved',
+      description: `"${preset.name}" is now available in saved blends.`,
+    });
+  }
+
+  function handleDeletePreset() {
+    if (!selectedPresetId) {
+      return;
+    }
+
+    const preset = presets.find((item) => item.id === selectedPresetId);
+    if (!preset) {
+      return;
+    }
+
+    if (!confirm(`Delete saved voice recipe "${preset.name}"?`)) {
+      return;
+    }
+
+    deletePreset(selectedPresetId);
+    setSelectedPresetId('');
+    toast({
+      title: 'Voice recipe deleted',
+      description: `"${preset.name}" was removed.`,
+    });
+  }
+
   return (
     <motion.div
       ref={containerRef}
       className={cn(
-        'fixed right-auto',
-        isStoriesRoute
-          ? // Position aligned with story list: after sidebar + padding, width 360px
-            'left-[calc(5rem+2rem)] w-[360px]'
-          : 'left-[calc(5rem+2rem)] w-[calc((100%-5rem-4rem)/2-1rem)]',
+        isDocked
+          ? 'relative w-full max-w-[900px]'
+          : cn(
+              'fixed right-auto',
+              isStoriesRoute
+                ? // Position aligned with story list: after sidebar + padding, width 360px
+                  'left-[calc(5rem+2rem)] w-[360px]'
+                : 'left-[calc(5rem+2rem)] w-[calc((100%-5rem-4rem)/2-1rem)]',
+            ),
       )}
-      style={{
-        // On stories route: offset by track editor height when visible
-        // On other routes: offset by audio player height when visible
-        bottom: hasTrackEditor
-          ? `${trackEditorHeight + 24}px`
-          : isPlayerOpen
-            ? 'calc(7rem + 1.5rem)'
-            : '1.5rem',
-      }}
+      style={
+        isDocked
+          ? undefined
+          : {
+              // On stories route: offset by track editor height when visible
+              // On other routes: offset by audio player height when visible
+              bottom: hasTrackEditor
+                ? `${trackEditorHeight + 24}px`
+                : isPlayerOpen
+                  ? 'calc(7rem + 1.5rem)'
+                  : '1.5rem',
+            }
+      }
     >
       <motion.div
-        className="bg-background/30 backdrop-blur-2xl border border-accent/20 rounded-[2rem] shadow-2xl hover:bg-background/40 hover:border-accent/20 transition-all duration-300 p-3"
+        className="neu-surface-strong backdrop-blur-xl rounded-[2rem] transition-all duration-300 p-3"
         transition={{ duration: 0.6, ease: 'easeInOut' }}
       >
         <Form {...form}>
@@ -426,6 +552,163 @@ export function FloatingGenerateBox({
                       </FormItem>
                     )}
                   />
+                </div>
+
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1">
+                    <Select value={selectedPresetId || '__none__'} onValueChange={onPresetSelect}>
+                      <SelectTrigger className="h-8 text-xs bg-card border-border rounded-full hover:bg-background/50 transition-all">
+                        <SelectValue placeholder="Saved blend recipes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__" className="text-xs text-muted-foreground">
+                          Saved blend recipes
+                        </SelectItem>
+                        {presets.map((preset) => (
+                          <SelectItem key={preset.id} value={preset.id} className="text-xs">
+                            {preset.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSavePreset}
+                    className="h-8 w-8 rounded-full"
+                    title="Save current blend"
+                  >
+                    <BookmarkPlus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDeletePreset}
+                    disabled={!selectedPresetId}
+                    className="h-8 w-8 rounded-full"
+                    title="Delete selected blend"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                <div className="mt-2 space-y-2">
+                  <FormField
+                    control={form.control}
+                    name="secondaryProfileId"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1">
+                        <FormControl>
+                          <Select
+                            onValueChange={(value) =>
+                              field.onChange(value === '__none__' ? undefined : value)
+                            }
+                            value={field.value || '__none__'}
+                          >
+                            <SelectTrigger className="h-8 text-xs bg-card border-border rounded-full hover:bg-background/50 transition-all">
+                              <SelectValue placeholder="Blend voice (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__" className="text-xs text-muted-foreground">
+                                No blend voice
+                              </SelectItem>
+                              {profiles
+                                ?.filter((profile) => profile.id !== selectedProfileId)
+                                .map((profile) => (
+                                  <SelectItem
+                                    key={profile.id}
+                                    value={profile.id}
+                                    className="text-xs text-muted-foreground"
+                                  >
+                                    Blend with {profile.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="secondaryWeight"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>Blend Weight</span>
+                          <span>
+                            {Math.round((1 - field.value) * 100)}% / {Math.round(field.value * 100)}%
+                          </span>
+                        </div>
+                        <FormControl>
+                          <Slider
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={[field.value]}
+                            onValueChange={(value) => field.onChange(value[0] ?? 0.5)}
+                          />
+                        </FormControl>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={form.control}
+                      name="pitchShift"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span>Pitch</span>
+                            <span>
+                              {field.value > 0 ? '+' : ''}
+                              {field.value.toFixed(1)} st
+                            </span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={-12}
+                              max={12}
+                              step={0.5}
+                              value={[field.value]}
+                              onValueChange={(value) => field.onChange(value[0] ?? 0)}
+                            />
+                          </FormControl>
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="formantShift"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span>Formant</span>
+                            <span>{field.value.toFixed(2)}x</span>
+                          </div>
+                          <FormControl>
+                            <Slider
+                              min={0.7}
+                              max={1.4}
+                              step={0.01}
+                              value={[field.value]}
+                              onValueChange={(value) => field.onChange(value[0] ?? 1)}
+                            />
+                          </FormControl>
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               </motion.div>
             </AnimatePresence>

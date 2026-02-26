@@ -16,6 +16,10 @@ const generationSchema = z.object({
   seed: z.number().int().optional(),
   modelSize: z.enum(['1.7B', '0.6B']).optional(),
   instruct: z.string().max(500).optional(),
+  secondaryProfileId: z.string().optional(),
+  secondaryWeight: z.number().min(0).max(1),
+  pitchShift: z.number().min(-12).max(12),
+  formantShift: z.number().min(0.7).max(1.4),
 });
 
 export type GenerationFormValues = z.infer<typeof generationSchema>;
@@ -47,6 +51,10 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       seed: undefined,
       modelSize: '1.7B',
       instruct: '',
+      secondaryProfileId: undefined,
+      secondaryWeight: 0.5,
+      pitchShift: 0,
+      formantShift: 1,
       ...options.defaultValues,
     },
   });
@@ -67,8 +75,9 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
     try {
       setIsGenerating(true);
 
-      const modelName = `qwen-tts-${data.modelSize}`;
-      const displayName = data.modelSize === '1.7B' ? 'Qwen TTS 1.7B' : 'Qwen TTS 0.6B';
+      const modelSize = data.modelSize ?? '1.7B';
+      const modelName = `qwen-tts-${modelSize}`;
+      const displayName = modelSize === '1.7B' ? 'Qwen TTS 1.7B' : 'Qwen TTS 0.6B';
 
       try {
         const modelStatus = await apiClient.getModelStatus();
@@ -82,13 +91,22 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         console.error('Failed to check model status:', error);
       }
 
+      const secondaryProfileId =
+        data.secondaryProfileId && data.secondaryProfileId !== selectedProfileId
+          ? data.secondaryProfileId
+          : undefined;
+
       const result = await generation.mutateAsync({
         profile_id: selectedProfileId,
         text: data.text,
         language: data.language,
         seed: data.seed,
-        model_size: data.modelSize,
+        model_size: modelSize,
         instruct: data.instruct || undefined,
+        secondary_profile_id: secondaryProfileId,
+        secondary_weight: secondaryProfileId ? data.secondaryWeight : undefined,
+        pitch_shift: data.pitchShift,
+        formant_shift: data.formantShift,
       });
 
       toast({
@@ -99,7 +117,13 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       const audioUrl = apiClient.getAudioUrl(result.id);
       setAudioWithAutoPlay(audioUrl, result.id, selectedProfileId, data.text.substring(0, 50));
 
-      form.reset();
+      const currentValues = form.getValues();
+      form.reset({
+        ...currentValues,
+        text: '',
+        instruct: '',
+        seed: undefined,
+      });
       options.onSuccess?.(result.id);
     } catch (error) {
       toast({
